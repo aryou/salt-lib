@@ -10,6 +10,7 @@ import salt.loader
 import salt.runner
 import salt.client
 import json
+import requests
 import pprint
 import logging
 
@@ -38,7 +39,11 @@ def add_ose(minion=None):
 
 	log.info("Adding new minion '{0}' to System MicroService".format(minion))
 	ret = _get_new_minion_data(minion)
-	pprint.pprint(ret)
+	isValidated = _validate_token(ret.get('install_token', None))
+	if not isValidated:
+		log.error("Unable to Add Ose with invalid token {0}".format(ret.get('install_token', None)));
+		return False
+
 	return _send_rabbitmq(ret)
 
 def _get_new_minion_data(minion=None):
@@ -60,6 +65,34 @@ def _get_new_minion_data(minion=None):
 
 	ret.update({'ose_uuid': uuid, 'install_token': token})
 	return ret
+
+def _validate_token(token):
+	'''
+	Validate Install Token
+	'''
+	#pprint.pprint(token)
+	if not token:
+		return False
+
+	master_opts = salt.config.client_config('/etc/salt/master')
+	ose_url = master_opts.get('ose_url', None)
+	ose_protocol = master_opts.get('ose_protocol', 'http')
+	if not ose_url:
+		return False
+
+	try: 
+		url = ose_protocol + '://' + ose_url + '/agent/validate/' + token
+		# pprint.pprint(url)
+		r = requests.get(url, timeout=5)
+		pprint.pprint(r.status_code)
+		if r.status_code != 200:
+			return False
+		else:
+			return True
+	except Exception as inst:
+		return False
+
+
 
 def _send_rabbitmq(ret=None):
 	'''
